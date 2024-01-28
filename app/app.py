@@ -1,10 +1,13 @@
 from flask import Flask, render_template, request, redirect, url_for, flash
 from flask_sqlalchemy import SQLAlchemy
 from flask_login import LoginManager, login_user, logout_user, login_required, UserMixin
+from flask_bcrypt import bcrypt
 from models import User, Link, Log  # Импортируем модель пользователя из файла models.py
+from forms import RegisterForm
+
 
 app = Flask(__name__)
-app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///yourls.db'
+app.config['SQLALCHEMY_DATABASE_URI'] = 'sqlite:///urls.db'
 app.config['SECRET_KEY'] = 'your_secret_key'  # Секретный ключ для защиты сессий
 
 db = SQLAlchemy(app)
@@ -17,25 +20,24 @@ def load_user(user_id):
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
-    if request.method == 'POST':
-        username = request.form['username']
-        password = request.form['password']
-        email = request.form['email']
+    form = RegisterForm()
+    if form.validate_on_submit():
+        username = form.username.data
+        email = form.email.data
+        password = form.password.data
 
-        # Проверка, что пользователь с таким именем или email уже не существует
-        if User.query.filter_by(username=username).first() or User.query.filter_by(email=email).first():
-            flash('Пользователь с таким именем пользователя или email уже существует', 'error')
-            return redirect(url_for('register'))
+        # Хешируем пароль перед сохранением в базу данных
+        hashed_password = bcrypt.generate_password_hash(password).decode('utf-8')
 
-        # Создание нового пользователя
-        new_user = User(username=username, password=password, email=email)
+        # Создаем нового пользователя и сохраняем его в базе данных
+        new_user = User(username=username, email=email, password=hashed_password)
         db.session.add(new_user)
         db.session.commit()
 
-        flash('Вы успешно зарегистрированы! Пожалуйста, войдите в систему.', 'success')
+        flash('Регистрация прошла успешно! Теперь вы можете войти в систему.', 'success')
         return redirect(url_for('login'))
 
-    return render_template('register.html')
+    return render_template('register.html', form=form)
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -62,7 +64,12 @@ def logout():
     return redirect(url_for('index'))
 
 def generate_short_url():
-    pass
+    characters = string.ascii_letters + string.digits
+    short_url = ''.join(random.choices(characters, k=6))
+    # Проверяем, существует ли уже ссылка с таким кодом
+    while Link.query.filter_by(keyword=short_url).first() is not None:
+        short_url = ''.join(random.choices(characters, k=6))
+    return short_url
 
 @app.route('/')
 def index():
